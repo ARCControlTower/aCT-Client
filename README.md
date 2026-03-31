@@ -1,7 +1,3 @@
-# NOTICE:
-Code suitable for testing currently resides on branch `test`. All links provided
-here use that branch.
-
 # Install
 
 ## System dependencies
