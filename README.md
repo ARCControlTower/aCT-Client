@@ -29,16 +29,14 @@ Once virtual environment is created, it has to be activated to be used.
 All commands require shell with an active virtual environment.
 
 To install aCT client, run this command:  
-`(act-venv) $ pip install git+https://github.com/ARCControlTower/aCT.git@test#subdirectory=src/act/client/aCT-client`  
-The command installs aCT client from git repository as it is not distributed in
-a package repository like PyPI. To run aCT client commands the virtual envionmnet
+`(act-venv) $ pip install aCT-client`  
+The command installs aCT client from PyPI. To run aCT client commands the virtual envionmnet
 needs to be activated. Your shell might indicate that the environment is active
 by prepending prefix to its prompt:  
 `(act-venv) $ `  
 
 ## Upgrading to newest version
-`(act-venv) $ pip uninstall aCT-client`  
-`(act-venv) $ pip install git+https://github.com/ARCControlTower/aCT.git@test#subdirectory=src/act/client/aCT-client`  
+`(act-venv) $ pip install aCT-client --upgrade` 
 
 # Configuration
 Default location for aCT configuration file is `$HOME/.config/act-client/config.yaml`.
@@ -295,3 +293,6 @@ proper cleanup and can take a while before they stop if they are cancelled with
 ctrl+c are `act get` and `act sub`. Programs `act kill` and `act clean` can also
 perform longer cleanup but they cannot be cancelled as cleanup is their only
 operation.
+
+## License
+This project is licensed under the [Apache License 2.0](LICENSE).

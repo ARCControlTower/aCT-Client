@@ -1,2 +1,5 @@
 MANIFEST
 dist
+lib
+*.egg-info
+build
