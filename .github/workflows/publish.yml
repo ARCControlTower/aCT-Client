@@ -45,6 +45,7 @@ jobs:
       # 6️⃣ Determine upload target (TestPyPI for patch, PyPI for minor/major)
       - name: Determine upload repository
         id: determine-repo
+        shell: bash
         run: |
           MAJOR=$(echo $VERSION | cut -d. -f1)
           MINOR=$(echo $VERSION | cut -d. -f2)
