@@ -54,7 +54,7 @@ jobs:
 
       # 7️⃣ Publish using PyPA action with OIDC
       - name: Publish to PyPI/TestPyPI
-        uses: pypa/gh-action-pypi-publish@release
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
           repository-url: ${{ steps.determine-repo.outputs.repo }}
