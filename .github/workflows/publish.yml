@@ -46,7 +46,10 @@ jobs:
       - name: Determine upload repository
         id: determine-repo
         run: |
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+    
           if [ "$PATCH" -ne 0 ]; then
             echo "repo=https://test.pypi.org/legacy/" >> $GITHUB_OUTPUT
           else
