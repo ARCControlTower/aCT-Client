@@ -55,6 +55,7 @@ jobs:
             echo "repo=https://test.pypi.org/legacy/" >> $GITHUB_OUTPUT
           else
             echo "repo=https://upload.pypi.org/legacy/" >> $GITHUB_OUTPUT
+          fi
 
       # 7️⃣ Publish using PyPA action with OIDC
       - name: Publish to PyPI/TestPyPI
