@@ -1,5 +1,6 @@
 name: Publish Python Package
-
+# On pushing a tag like vX.Y.Z like - git tag v1.1.1; git push origin v1.1.1 - automatically 
+# publish current commit to test pypi if Z != 0, or normal pypi otherwise, using specified version.
 on:
   push:
     tags:
