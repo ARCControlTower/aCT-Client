@@ -119,7 +119,7 @@ class ACTRest:
             jobs.extend(self.getJobStats(jobids=jobids, name=name, state='donefailed', clienttab=clienttab, arctab=arctab))
         return jobs
 
-    def downloadJobResults(self, jobid, cancel, downloadDir=None):
+    def downloadJobResults(self, jobid, cancel, downloadDir=None, attempts=5):
         transferQueue = queue.Queue()
         transferQueue.put({
             "url": f"/jobs/{jobid}/results/",
@@ -130,52 +130,68 @@ class ACTRest:
         anyResults = False
         while not transferQueue.empty() and not cancel.is_set():
             trdict = transferQueue.get()
-            try:
-                resp = self.httpClient.request('GET', trdict["url"], token=self.token)
-            except Exception as exc:
-                msg = f"Error downloading {trdict['url']}: {exc}"
-                self.logger.debug(msg)
-                errors.append(msg)
-
-            if trdict["type"] == "listing":
-                text = resp.read().decode()
-                self.logger.debug(f"Response for listing {trdict['url']} - {resp.status} {text}")
-                if resp.status != 200:
-                    errors.append(f"Error fetching listing {trdict['url']}: {json.loads(text)['msg']}")
-                    continue
-                elif resp.status == 204:
-                    self.logger.debug(f"No results for job {jobid}")
-                    return anyResults, errors
-                listing = json.loads(text)
-                for filename in listing["file"]:
-                    transferQueue.put({
-                        "url": f"{trdict['url']}{filename}",
-                        "type": "file",
-                        "path": os.path.join(trdict['path'], filename)
-                    })
-                for dirname in listing["dir"]:
-                    transferQueue.put({
-                        "url": f"{trdict['url']}{dirname}/",
-                        "type": "listing",
-                        "path": os.path.join(trdict['path'], dirname)
-                    })
-
-            elif trdict["type"] == "file":
-                if resp.status != 200:
-                    text = resp.read().decode()
-                    self.logger.debug(f"Response for file {trdict['url']} - {resp.status} {text}")
-                    errors.append(f"Error fetching file {trdict['url']}: {json.loads(text)['msg']}")
-                    continue
+            for i in range(attempts):
                 try:
-                    os.makedirs(os.path.dirname(trdict["path"]), exist_ok=True)
-                    _storeTransferChunks(resp, trdict["path"])
+                    resp = self.httpClient.request('GET', trdict["url"], token=self.token)
                 except Exception as exc:
-                    msg = f"Error downloading file {trdict['url']} to {trdict['path']}: {exc}"
+                    msg = f"Attempt {i+1}/{attempts}: Error downloading {trdict['url']}: {exc}"
                     self.logger.debug(msg)
-                    errors.append(msg)
+                    if i == attempts-1:
+                        errors.append(msg)
+                        return anyResults, errors
                     continue
-                self.logger.debug(f"Downloaded file {trdict['url']} to {trdict['path']}")
-                anyResults = True
+
+                if trdict["type"] == "listing":
+                    text = resp.read().decode()
+                    self.logger.debug(f"Attempt {i+1}/{attempts}: Response for listing {trdict['url']} - {resp.status} {text}")
+                    if resp.status == 204:
+                        self.logger.debug(f"Attempt {i+1}/{attempts}: No results for job {jobid}")
+                        return anyResults, errors
+                    elif resp.status != 200:
+                        if i == attempts-1:
+                            errors.append(f"Attempt {i+1}/{attempts}: Error fetching listing {trdict['url']}: {json.loads(text)['msg']}")
+                            return anyResults, errors
+                        continue
+                    listing = json.loads(text)
+                    for filename in listing["file"]:
+                        transferQueue.put({
+                            "url": f"{trdict['url']}{filename}",
+                            "type": "file",
+                            "path": os.path.join(trdict['path'], filename)
+                        })
+                    for dirname in listing["dir"]:
+                        transferQueue.put({
+                            "url": f"{trdict['url']}{dirname}/",
+                            "type": "listing",
+                            "path": os.path.join(trdict['path'], dirname)
+                        })
+
+                elif trdict["type"] == "file":
+                    if resp.status != 200:
+                        text = resp.read().decode()
+                        self.logger.debug(f"Attempt {i+1}/{attempts}: Response for file {trdict['url']} - {resp.status} {text}")
+                        if i == attempts-1:
+                            errors.append(f"Attempt {i+1}/{attempts}: Error fetching file {trdict['url']}: {json.loads(text)['msg']}")
+                            return anyResults, errors
+                        continue
+                    try:
+                        os.makedirs(os.path.dirname(trdict["path"]), exist_ok=True)
+                        _storeTransferChunks(resp, trdict["path"])
+                    except Exception as exc:
+                        try:
+                            if os.path.exists(trdict["path"]):
+                                os.remove(trdict["path"])
+                        except OSError as remove_exc:
+                            self.logger.debug(f"Failed to remove partial file {trdict['path']}: {remove_exc}")
+                        msg = f"Attempt {i+1}/{attempts}: Error downloading file {trdict['url']} to {trdict['path']}: {exc}"
+                        self.logger.debug(msg)
+                        if i == attempts-1:
+                            errors.append(msg)
+                            return anyResults, errors
+                        continue
+                    self.logger.debug(f"Attempt {i+1}/{attempts}: Downloaded file {trdict['url']} to {trdict['path']}")
+                    anyResults = True
+                break
 
         return anyResults, errors
 
@@ -405,6 +421,12 @@ class ACTRest:
 
     def getInfo(self):
         return self.request('GET', '/info', token=self.token)
+    
+    def getUserSum(self):
+        jsonData,status =  self.request('GET', 'usersummary', token=self.token)
+        if status != 200:
+            raise ACTClientError(f'Error fetching user summary: {jsonData["msg"]}')
+        return jsonData
 
     def close(self):
         self.httpClient.close()

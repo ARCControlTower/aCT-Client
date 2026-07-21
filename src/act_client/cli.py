@@ -12,7 +12,7 @@ from act_client.common import (ACTClientError, disableSIGINT, getIDParam,
 from act_client.config import checkConf, expandPaths, loadConf
 from act_client.httpclient import HTTP_BUFFER_SIZE, HTTPClient
 from act_client.operations import (SubmissionInterrupt, getACTRestClient,
-                                   getWebDAVClient)
+                                   getWebDAVClient, ACTRest)
 
 
 def addCommonArgs(parser):
@@ -197,6 +197,11 @@ def createParser():
         help='print job\'s stderr'
     )
 
+    parserUserSummary = subparsers.add_parser(
+        'sum',
+        help='print jobcounts per user,cluster and arcstate'
+    )
+
     return parser
 
 
@@ -231,6 +236,8 @@ def runSubcommand(args):
         commandFun = subcommandSub
     elif args.command == 'cat':
         commandFun = subcommandCat
+    elif args.command == 'sum':
+        commandFun = subcommandUserSum
 
     commandFun(args, conf)
 
@@ -333,7 +340,7 @@ def process_one_job(job, cancel, clientQueue, downloadDir=None):
     if cancel.is_set():
         return
     
-    worker_client = clientQueue.get()
+    worker_client: ACTRest = clientQueue.get()
     try:
         anyResults, errors = worker_client.downloadJobResults(job["c_id"], cancel, downloadDir)
     except Exception as e:
@@ -400,6 +407,12 @@ def subcommandGet(args, conf, workers=10):
                 print(f'Errors downloading job {job["c_jobname"]}:')
                 for error in errors:
                     print(f'    {error}')
+                try:
+                    shutil.rmtree(dirname)
+                except FileNotFoundError:
+                    pass
+                except Exception as e:
+                    print('    Failed to remove partial directory {dirname}: {e}')
                 continue
 
             if not anyResults:
@@ -721,6 +734,73 @@ def subcommandCat(args, conf):
             except Exception as exc:
                 print(f'Error fetching {infoKey.lower()} from {url} for job {job["c_id"]} {job["c_jobname"]}: {exc}')
                 continue
+
+    finally:
+        actrest.close()
+
+
+def subcommandUserSum(args, conf):
+    checkConf(conf, ['server', 'token'])
+    actrest = getACTRestClient(args, conf)
+    try:
+        jsonData = actrest.getUserSum()
+    except Exception as exc:
+        print(exc)
+    else:
+        state_ord = {"toresubmit":0, "tosubmit":1, "submitted":2, "submitting":3, "torerun":4, "running":5, "finishing":6,
+                     "finished":7, "done":8, "failed":9, "donefailed":10, "tocancel":11, "cancelling":12, "cancelled":13}
+
+        all_states = set()
+        for row in jsonData:
+            all_states.update(row['states'])
+
+        state_cols = sorted(all_states,key=lambda state: (state_ord.get(state, float("inf")), state))
+
+        if len(state_cols)==0:
+            print('There are no jobs')
+        else:
+            # Dynamic widths for fixed columns
+            cn_width = max(
+                len("cn"),
+                *(len(str(row["cn"])) for row in jsonData)
+            )
+
+            cluster_width = max(
+                len("cluster"),
+                *(len(str(row["cluster"])) for row in jsonData)
+            )
+
+            # Dynamic widths for each state column
+            state_widths = {}
+            for state in state_cols:
+                state_widths[state] = max(
+                    len(state),
+                    *(len(str(row["states"].get(state, "/"))) for row in jsonData)
+                )
+
+            # Header
+            header = (
+                f"{'cn':<{cn_width}} "
+                f"{'cluster':<{cluster_width}}"
+            )
+
+            for state in state_cols:
+                header += f" {state:>{state_widths[state]}}"
+
+            print(header)
+            print("-" * len(header))
+
+            # Rows
+            for row in jsonData:
+                print(
+                    f"{row['cn']:<{cn_width}} "
+                    f"{row['cluster']:<{cluster_width}}",
+                    end=""
+                )
+                for state in state_cols:
+                    value = row["states"].get(state, "/")
+                    print(f" {value:>{state_widths[state]}}", end="")
+                print()
 
     finally:
         actrest.close()
