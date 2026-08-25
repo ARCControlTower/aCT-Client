@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import zipfile
+import time
 from urllib.parse import urlencode, urlparse
 
 from cryptography import x509
@@ -131,6 +132,9 @@ class ACTRest:
         while not transferQueue.empty() and not cancel.is_set():
             trdict = transferQueue.get()
             for i in range(attempts):
+                if cancel.is_set():
+                    break
+                time.sleep(i)
                 try:
                     resp = self.httpClient.request('GET', trdict["url"], token=self.token)
                 except Exception as exc:
@@ -178,6 +182,7 @@ class ACTRest:
                         os.makedirs(os.path.dirname(trdict["path"]), exist_ok=True)
                         _storeTransferChunks(resp, trdict["path"])
                     except Exception as exc:
+                        self.httpClient.close()
                         try:
                             if os.path.exists(trdict["path"]):
                                 os.remove(trdict["path"])
