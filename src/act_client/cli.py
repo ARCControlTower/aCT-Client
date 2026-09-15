@@ -14,6 +14,30 @@ from act_client.httpclient import HTTP_BUFFER_SIZE, HTTPClient
 from act_client.operations import (SubmissionInterrupt, getACTRestClient,
                                    getWebDAVClient, ACTRest)
 
+from enum import IntEnum, auto
+
+class StateOrder(IntEnum):
+    tosubmit = auto()
+    submitting = auto()
+    Accepted = auto()
+    Preparing = auto()
+    Submitting = auto()
+    Queuing = auto()
+    Running = auto()
+    Hold = auto()
+    Finishing = auto()
+    finished = auto()
+    tofetch = auto()
+    done = auto()
+    failed = auto()
+    donefailed = auto()
+    tocancel = auto()
+    cancelling = auto()
+    cancelled = auto()
+    toresubmit = auto()
+    torerun = auto()
+    toclean = auto()
+    lost = auto()
 
 def addCommonArgs(parser):
     parser.add_argument(
@@ -200,6 +224,12 @@ def createParser():
     parserUserSummary = subparsers.add_parser(
         'sum',
         help='print jobcounts per user,cluster and arcstate'
+    )
+    parserUserSummary.add_argument(
+        '--order-by',
+        choices=['cn', 'cluster'],
+        default='cn',
+        help='column to sort and display first, followed by the other column (default: cn)'
     )
 
     return parser
@@ -747,28 +777,34 @@ def subcommandUserSum(args, conf):
     except Exception as exc:
         print(exc)
     else:
-        state_ord = {"toresubmit":0, "tosubmit":1, "submitted":2, "submitting":3, "torerun":4, "running":5, "finishing":6,
-                     "finished":7, "done":8, "failed":9, "donefailed":10, "tocancel":11, "cancelling":12, "cancelled":13}
+        if args.order_by == 'cluster':
+            fixed_cols = ['cluster', 'cn']
+        else:
+            fixed_cols = ['cn', 'cluster']
+
+        jsonData.sort(key=lambda row: tuple(row[col] for col in fixed_cols))
 
         all_states = set()
         for row in jsonData:
             all_states.update(row['states'])
 
-        state_cols = sorted(all_states,key=lambda state: (state_ord.get(state, float("inf")), state))
+        def state_sort_key(state):
+            member = StateOrder.__members__.get(state)
+            return (member.value if member else float("inf"), state)
+
+        state_cols = sorted(all_states, key=state_sort_key)
 
         if len(state_cols)==0:
             print('There are no jobs')
         else:
             # Dynamic widths for fixed columns
-            cn_width = max(
-                len("cn"),
-                *(len(str(row["cn"])) for row in jsonData)
-            )
-
-            cluster_width = max(
-                len("cluster"),
-                *(len(str(row["cluster"])) for row in jsonData)
-            )
+            fixed_widths = {
+                col: max(
+                    len(col),
+                    *(len(str(row[col])) for row in jsonData)
+                )
+                for col in fixed_cols
+            }
 
             # Dynamic widths for each state column
             state_widths = {}
@@ -779,10 +815,7 @@ def subcommandUserSum(args, conf):
                 )
 
             # Header
-            header = (
-                f"{'cn':<{cn_width}} "
-                f"{'cluster':<{cluster_width}}"
-            )
+            header = " ".join(f"{col:<{fixed_widths[col]}}" for col in fixed_cols)
 
             for state in state_cols:
                 header += f" {state:>{state_widths[state]}}"
@@ -793,8 +826,7 @@ def subcommandUserSum(args, conf):
             # Rows
             for row in jsonData:
                 print(
-                    f"{row['cn']:<{cn_width}} "
-                    f"{row['cluster']:<{cluster_width}}",
+                    " ".join(f"{row[col]:<{fixed_widths[col]}}" for col in fixed_cols),
                     end=""
                 )
                 for state in state_cols:
